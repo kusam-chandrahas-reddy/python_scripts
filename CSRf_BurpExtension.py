@@ -20,11 +20,11 @@ class tab(ITab):
 		self.panel = Panel()
 		self.panel.setLayout(None)
 		self.label1 = JLabel("Payload Value")
-		self.label1.setBounds(x, y, 80, 20)
+		self.label1.setBounds(x, y, 120, 20)
 		self.panel.add(self.label1)
 		self.payload = JTextArea()
 		self.scrollpane = JScrollPane(self.payload)
-		self.scrollpane.setBounds(x + 100, y, 200, 20)
+		self.scrollpane.setBounds(x, y+40, 1000, 400)
 		self.panel.add(self.scrollpane)
 		return self.panel
 
@@ -34,8 +34,9 @@ class contextmenufactory(IContextMenuFactory):
 		self.extender=extender
 		self.callbacks=callbacks
 	def createMenuItems(self, invocation):
+		self.invocation=invocation
 		self.menuitems_list = []
-		self.menuitems_list.append(JMenuItem("Send to CSRF PoC Generator",None,actionPerformed=lambda x,inv=invocation: self.menuaction(inv)))
+		self.menuitems_list.append(JMenuItem("Send to CSRF PoC Generator",None,actionPerformed=lambda x: self.menuaction(invocation)))
 		x=str(invocation.getToolFlag())
 		a=str(self.callbacks.TOOL_PROXY)
 		t=str(type(invocation.getToolFlag()))
@@ -55,7 +56,11 @@ class contextmenufactory(IContextMenuFactory):
 		return self.menuitems_list
 	def menuaction(self,inv):
 		msg=inv.getSelectedMessages()
-		self.extender.mytab.payload.setText('Payload from menu item')
+		req=msg[0].getRequest().tolist()
+		reqdata=''.join(map(chr,req))
+		self.extender.mytab.payload.setText(reqdata)
+		
+		
 		#Do something
 
 class BurpExtender(IBurpExtender):
