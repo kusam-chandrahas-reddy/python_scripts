@@ -1,10 +1,16 @@
 #Creating Burp Extension for CSRF PoC Generator
-from burp import IBurpExtender, IContextMenuFactory, ITab
+from burp import IBurpExtender, IContextMenuFactory, ITab, ITextEditor
 from java.io import PrintWriter
 from java.lang import RuntimeException
 from java.awt import Panel
 from javax.swing import JScrollPane, JTextArea, JLabel,JMenuItem
 
+
+class texteditor(ITextEditor):
+	def __init__(self,extender):
+		pass
+	
+#creating a new tab in Burp Suite
 class tab(ITab):
 	def __init__(self,extender,name):
 		self.name=name
@@ -30,27 +36,26 @@ class tab(ITab):
 
 #adding context menu
 class contextmenufactory(IContextMenuFactory):
-	def __init__(self,extender,callbacks):
+	def __init__(self,extender):
 		self.extender=extender
-		self.callbacks=callbacks
 	def createMenuItems(self, invocation):
 		self.invocation=invocation
 		self.menuitems_list = []
 		self.menuitems_list.append(JMenuItem("Send to CSRF PoC Generator",None,actionPerformed=lambda x: self.menuaction(invocation)))
 		x=str(invocation.getToolFlag())
-		a=str(self.callbacks.TOOL_PROXY)
+		a=str(self.extender.callbacks.TOOL_PROXY)
 		t=str(type(invocation.getToolFlag()))
-		self.callbacks.printOutput(x)
-		self.callbacks.printOutput(t)
-		self.callbacks.printOutput(a)
+		self.extender.callbacks.printOutput(x)
+		self.extender.callbacks.printOutput(t)
+		self.extender.callbacks.printOutput(a)
 		x=str(invocation.CONTEXT_PROXY_HISTORY)
-		self.callbacks.printOutput('====')
-		self.callbacks.printOutput(x)
+		self.extender.callbacks.printOutput('====')
+		self.extender.callbacks.printOutput(x)
 		if invocation.getInvocationContext() == invocation.CONTEXT_PROXY_HISTORY:
-			self.callbacks.printOutput('yes: invocation.CONTEXT_PROXY_HISTORY')
+			self.extender.callbacks.printOutput('yes: invocation.CONTEXT_PROXY_HISTORY')
 		else:
 
-			self.callbacks.printOutput(str(invocation.getInvocationContext()))
+			self.extender.callbacks.printOutput(str(invocation.getInvocationContext()))
 			
 		messages=invocation.getSelectedMessages()
 		return self.menuitems_list
@@ -70,12 +75,13 @@ class BurpExtender(IBurpExtender):
 	#
 	
 	def	registerExtenderCallbacks(self, callbacks):
+		self.callbacks=callbacks
 		# set our extension name
-		callbacks.setExtensionName("CSRF PoC Generator")
-		helpers=callbacks.getHelpers()
+		self.callbacks.setExtensionName("CSRF PoC Generator")
+		helpers=self.callbacks.getHelpers()
 		# obtain our output and error streams
-		stdout = PrintWriter(callbacks.getStdout(), True)
-		stderr = PrintWriter(callbacks.getStderr(), True)
+		stdout = PrintWriter(self.callbacks.getStdout(), True)
+		stderr = PrintWriter(self.callbacks.getStderr(), True)
 		
 		# write a message to our output stream
 		stdout.println("Hello output")
@@ -84,18 +90,18 @@ class BurpExtender(IBurpExtender):
 		stderr.println("Hello errors")
 		
 		# write a message to the Burp alerts tab
-		callbacks.issueAlert("Hello alerts")
+		self.callbacks.issueAlert("Hello alerts")
 
-		version=callbacks.getBurpVersion()
+		version=self.callbacks.getBurpVersion()
 		print(version)
 		for i in version:
 			print(i)
 		stdout.println(version)
 
-		self.contextmenu=contextmenufactory(self,callbacks)
-		callbacks.registerContextMenuFactory(self.contextmenu)
+		self.contextmenu=contextmenufactory(self)
+		self.callbacks.registerContextMenuFactory(self.contextmenu)
 		self.mytab=tab(self,'My Tab Name')
-		callbacks.addSuiteTab(self.mytab)
+		self.callbacks.addSuiteTab(self.mytab)
 
 
 
