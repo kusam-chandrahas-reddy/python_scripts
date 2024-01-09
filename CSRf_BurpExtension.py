@@ -8,6 +8,7 @@ from javax.swing import JScrollPane, JTextArea, JLabel,JMenuItem
 
 class texteditor(ITextEditor):
 	def __init__(self,extender):
+		self.extender=extender
 		pass
 	
 #creating a new tab in Burp Suite
@@ -23,16 +24,35 @@ class tab(ITab):
 		# Returning instance of the panel as in burp's docs
 		x = 10  # panel padding
 		y = 10  # panel padding
-		self.panel = Panel()
-		self.panel.setLayout(None)
-		self.label1 = JLabel("Payload Value")
-		self.label1.setBounds(x, y, 120, 20)
-		self.panel.add(self.label1)
-		self.payload = JTextArea()
-		self.scrollpane = JScrollPane(self.payload)
-		self.scrollpane.setBounds(x, y+40, 1000, 400)
-		self.panel.add(self.scrollpane)
-		return self.panel
+		self.panel1 = Panel()
+		self.panel1.setLayout(None)
+		label1=JLabel("Request List")
+		label1.setBounds(x, y, 120, 20)
+		label2=JLabel("Request data")
+		label2.setBounds(x, y+30, 120, 20)
+		label3=JLabel("CSRF PoC")
+		label3.setBounds(x+900, y+30, 120, 20)
+		self.panel1.add(label1)
+		self.panel1.add(label2)
+		self.panel1.add(label3)
+		#self.payload = JTextArea()
+		#self.scrollpane = JScrollPane(self.payload)
+		#self.scrollpane.setBounds(x, y+40, 1000, 400)
+		#self.panel.add(self.scrollpane)
+		self.texteditor1=self.extender.callbacks.createTextEditor()
+		self.texteditor1.setEditable(True)
+		self.texteditor1.setText("Request headers and body")
+		texteditor1component=self.texteditor1.getComponent()
+		texteditor1component.setBounds(x, y+60, 800, 500)
+		self.panel1.add(texteditor1component)
+		self.texteditor2=self.extender.callbacks.createTextEditor()
+		self.texteditor2.setEditable(True)
+		self.texteditor2.setText("CSRF PoC data")
+		texteditor2component=self.texteditor2.getComponent()
+		texteditor2component.setBounds(x+900, y+60, 800, 500)
+		self.panel1.add(texteditor2component)
+
+		return self.panel1
 
 #adding context menu
 class contextmenufactory(IContextMenuFactory):
@@ -63,7 +83,7 @@ class contextmenufactory(IContextMenuFactory):
 		msg=inv.getSelectedMessages()
 		req=msg[0].getRequest().tolist()
 		reqdata=''.join(map(chr,req))
-		self.extender.mytab.payload.setText(reqdata)
+		self.extender.mytab.texteditor1.setText(reqdata)
 		
 		
 		#Do something
