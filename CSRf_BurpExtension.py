@@ -1,133 +1,242 @@
 #Creating Burp Extension for CSRF PoC Generator
 from burp import IBurpExtender, IContextMenuFactory, ITab, ITextEditor
-from java.io import PrintWriter
+from java.io import PrintWriter, File, FileOutputStream
 from java.lang import RuntimeException
 from java.awt import Panel
-from javax.swing import JScrollPane, JTextArea, JLabel,JMenuItem
+from javax.swing import JScrollPane, JTextArea, JLabel, JMenuItem, JSplitPane, JFileChooser
+from burp import IHttpListener
+from burp import IMessageEditorController
+from java.awt import Component
+from java.awt.event import ActionListener
+from java.util import ArrayList
+from java.util import List
+from javax.swing import JScrollPane
+from javax.swing import JTabbedPane
+from javax.swing import JTable
+from javax.swing import JButton
+from javax.swing import SwingUtilities
+from javax.swing.table import AbstractTableModel
+from javax.swing.table import DefaultTableModel
+from threading import Lock
 
 
-class texteditor(ITextEditor):
+html_poc="""<html>
+<body>
+<form method="{}" action="{}">
+{}
+<input type=submit value="Submit Form"/>
+</body>
+</html>
+"""
+input_field="""<input type="hidden" name="{}" value="{}" >"""
+
+class ButtonListener(ActionListener):
 	def __init__(self,extender):
 		self.extender=extender
-		pass
+	def actionPerformed(self,e):
+		fromButton=e.getSource().getText()
+		if fromButton=='Generate HTML PoC':
+			self.selectedreqid=self.extender.burptab.reqeust_table.getSelectedRow()
+			if self.selectedreqid == -1:
+				print('No data selected')
+				return ""
+			self.reqservice=self.extender.burptab.data[self.selectedreqid].getHttpService()
+			self.reqtext=self.extender.burptab.requestviewer.getMessage()
+			self.analyzedreq=self.extender.helpers.analyzeRequest(self.reqservice,self.reqtext)
+			self.reqparams=self.analyzedreq.getParameters()
+			self.inputs=""
+			for p in self.reqparams:
+				print(p.getType())
+				if p.getType() == p.PARAM_BODY:
+					name=p.getName().replace('&','&amp;').replace('<','&lt;').replace('>','&gt;').replace('"','&quot;').replace("'","&#x27;")
+					value=p.getValue().replace('&','&amp;').replace('<','&lt;').replace('>','&gt;').replace('"','&quot;').replace("'","&#x27;")
+					self.inputs+=input_field.format(name,value)+'\n'
+			self.htmlpoc=html_poc.format(self.analyzedreq.getMethod(),self.analyzedreq.getUrl(),self.inputs)
+			self.extender.burptab.pocviewer.setText(self.htmlpoc)
+
+		if fromButton=='Move Up':
+			self.extender.burptab.pocviewer.setText("Move Up Generated!!!!!")
+			pass
+		if fromButton=='Move Down':
+			self.extender.burptab.pocviewer.setText("Move Down Generated!!!!!")
+			pass
+		if fromButton=='HTML PoC':
+			self.extender.burptab.pocviewer.setText("HTML PoC Generated!!!!!")
+			pass
+		if fromButton=='Generate Ajax PoC':
+			self.extender.burptab.pocviewer.setText("Ajax PoC Generated!!!!!")
+			pass
+		if fromButton=='Save PoC':
+			filesavedialog=JFileChooser()
+			i=filesavedialog.showSaveDialog(None)
+			if i == JFileChooser.APPROVE_OPTION:
+				pocToSave=self.extender.burptab.pocviewer.getText()
+				f=filesavedialog.getSelectedFile()
+				fn=str(f.getName())
+				if fn[-5:] != ".html" and fn[-4:] !=".htm":
+					fn=fn+".html"
+					rf=File(f.getParentFile(),fn)
+					s=f.renameTo(rf)
+					if s:
+						print("Rename success")
+					else:
+						print("Unable to save file")
+						print(s)
+						print(rf.getParentFile(),rf.getName())
+						print(f.getParentFile(),f.getName())
+						return
+				fos=FileOutputStream(f)
+				fos.write(pocToSave)
+				fos.close()
+					
 	
-#creating a new tab in Burp Suite
-class tab(ITab):
+class MessageEditorController(IMessageEditorController):
+	def __init__(self,extender):
+		self.extender=extender
+	def getHttpService(self):
+		return self.extender.burptab.data.getHttpService()
+	def getRequest(self):
+		return self._currentlyDisplayedItem.getRequest()
+	def getResponse(self):
+		return self._currentlyDisplayedItem.getResponse()
+	
+class burptab(ITab):
 	def __init__(self,extender,name):
 		self.name=name
 		self.extender=extender
+		self.data=[]
 	def getTabCaption(self):
 		return self.name
 	def getUiComponent(self):
-		x=10
-		self.name='asdf'
-		# Returning instance of the panel as in burp's docs
-		x = 10  # panel padding
-		y = 10  # panel padding
-		self.panel1 = Panel()
-		self.panel1.setLayout(None)
-		label1=JLabel("Request List")
-		label1.setBounds(x, y, 120, 20)
-		label2=JLabel("Request data")
-		label2.setBounds(x, y+30, 120, 20)
-		label3=JLabel("CSRF PoC")
-		label3.setBounds(x+900, y+30, 120, 20)
-		self.panel1.add(label1)
-		self.panel1.add(label2)
-		self.panel1.add(label3)
-		#self.payload = JTextArea()
-		#self.scrollpane = JScrollPane(self.payload)
-		#self.scrollpane.setBounds(x, y+40, 1000, 400)
-		#self.panel.add(self.scrollpane)
-		self.texteditor1=self.extender.callbacks.createTextEditor()
-		self.texteditor1.setEditable(True)
-		self.texteditor1.setText("Request headers and body")
-		texteditor1component=self.texteditor1.getComponent()
-		texteditor1component.setBounds(x, y+60, 800, 500)
-		self.panel1.add(texteditor1component)
-		self.texteditor2=self.extender.callbacks.createTextEditor()
-		self.texteditor2.setEditable(True)
-		self.texteditor2.setText("CSRF PoC data")
-		texteditor2component=self.texteditor2.getComponent()
-		texteditor2component.setBounds(x+900, y+60, 800, 500)
-		self.panel1.add(texteditor2component)
+		self.mainsplit=JSplitPane(JSplitPane.VERTICAL_SPLIT)
+		self.split1_top=JSplitPane(JSplitPane.HORIZONTAL_SPLIT)
+		self.split2_bottom=JSplitPane(JSplitPane.VERTICAL_SPLIT)
+		self.split3_bottom=JSplitPane(JSplitPane.HORIZONTAL_SPLIT)
+		self.buttonpanel = Panel()
+		self.panel2 = Panel()
+		self.reqeust_table=Table(self.extender,self.data)
+		self.scrollPane=JScrollPane(self.reqeust_table)
+		self.requestviewer=self.extender.callbacks.createMessageEditor(MessageEditorController(self.extender),True)
+		self.pocviewer=self.extender.callbacks.createTextEditor()
+		self.actionListener=ButtonListener(self.extender)
+		self.buttonGeneratePoc = JButton('Generate HTML PoC')
+		self.buttonpanel.add(self.buttonGeneratePoc)
+		self.buttonGeneratePoc.addActionListener(self.actionListener)
+		self.buttonSavePoc=JButton('Save PoC')
+		self.buttonpanel.add(self.buttonSavePoc)
+		self.buttonSavePoc.addActionListener(self.actionListener)
 
-		return self.panel1
+		self.mainsplit.setDividerLocation(300)
+		self.split1_top.setDividerLocation(1000)
+		self.split2_bottom.setDividerLocation(500)
+		self.split3_bottom.setDividerLocation(1000)
 
-#adding context menu
+		self.mainsplit.setLeftComponent(self.split1_top)
+		self.mainsplit.setRightComponent(self.split2_bottom)
+		self.split2_bottom.setLeftComponent(self.split3_bottom)
+		self.split2_bottom.setRightComponent(self.buttonpanel)
+		self.split1_top.setLeftComponent(self.scrollPane)
+		self.split1_top.setRightComponent(self.panel2)
+		self.split3_bottom.setLeftComponent(self.requestviewer.getComponent())
+		self.split3_bottom.setRightComponent(self.pocviewer.getComponent())
+
+		self.extender.callbacks.customizeUiComponent(self.mainsplit)
+		self.extender.callbacks.customizeUiComponent(self.split1_top)
+		self.extender.callbacks.customizeUiComponent(self.split2_bottom)
+		self.extender.callbacks.customizeUiComponent(self.split3_bottom)
+		self.extender.callbacks.customizeUiComponent(self.reqeust_table)
+		self.extender.callbacks.customizeUiComponent(self.scrollPane)
+		self.extender.callbacks.customizeUiComponent(self.buttonpanel)
+		self.extender.callbacks.customizeUiComponent(self.panel2)
+		self.extender.callbacks.customizeUiComponent(self.buttonGeneratePoc)
+
+		return self.mainsplit
+
+class Table(JTable):
+	def __init__(self, extender, data):
+		self.extender = extender
+		self.data=data
+		self.setModel(AbstractTableModelclass(self.extender,self.data))
+	def changeSelection(self, row, col, toggle, extend):
+			self.selectedreq=self.data[row]
+			self.extender.burptab.requestviewer.setMessage(self.selectedreq.getRequest(), True)
+			JTable.changeSelection(self, row, col, toggle, extend)
+	def addRow(self,message):
+		rc=len(self.data)
+		req=self.extender.callbacks.saveBuffersToTempFiles(message)
+		self.data.append(req)
+		self.getModel().fireTableRowsInserted(rc,rc)
+
+class AbstractTableModelclass(AbstractTableModel):
+	def __init__(self,extender,data):
+		self.extender=extender
+		self.columnNames=["S.No","Method","URL","Content Type"]
+		self.data=data
+	def getRowCount(self):
+		try:
+			return len(self.data)
+		except:
+			return 0
+
+	def getColumnCount(self):
+		return len(self.columnNames)
+
+	def getColumnName(self, columnIndex):
+		return self.columnNames[columnIndex]
+
+	def getValueAt(self, rowIndex, columnIndex):
+		self.rowentry = self.data[rowIndex]
+		if columnIndex == 0:
+			return rowIndex+1
+		elif columnIndex == 1:
+			return self.extender.helpers.analyzeRequest(self.rowentry).getMethod()
+		elif columnIndex == 2:
+			return self.extender.helpers.analyzeRequest(self.rowentry).getUrl()
+		elif columnIndex == 3:
+			return self.extender.helpers.analyzeRequest(self.rowentry).getContentType()
+		else:
+			return ""
+	
+	def getSelectedRow(self,rowIndex=0):
+		return self.data[rowIndex]
+
 class contextmenufactory(IContextMenuFactory):
 	def __init__(self,extender):
 		self.extender=extender
 	def createMenuItems(self, invocation):
 		self.invocation=invocation
 		self.menuitems_list = []
-		self.menuitems_list.append(JMenuItem("Send to CSRF PoC Generator",None,actionPerformed=lambda x: self.menuaction(invocation)))
-		x=str(invocation.getToolFlag())
-		a=str(self.extender.callbacks.TOOL_PROXY)
-		t=str(type(invocation.getToolFlag()))
-		self.extender.callbacks.printOutput(x)
-		self.extender.callbacks.printOutput(t)
-		self.extender.callbacks.printOutput(a)
-		x=str(invocation.CONTEXT_PROXY_HISTORY)
-		self.extender.callbacks.printOutput('====')
-		self.extender.callbacks.printOutput(x)
-		if invocation.getInvocationContext() == invocation.CONTEXT_PROXY_HISTORY:
+		self.menuitems_list.append(JMenuItem("Send to CSRF PoC Generator",None,actionPerformed=lambda x: self.menuactiononclick(self.invocation)))
+		if self.invocation.getInvocationContext() == self.invocation.CONTEXT_PROXY_HISTORY:
 			self.extender.callbacks.printOutput('yes: invocation.CONTEXT_PROXY_HISTORY')
 		else:
+			self.extender.callbacks.printOutput(str(self.invocation.getInvocationContext()))
 
-			self.extender.callbacks.printOutput(str(invocation.getInvocationContext()))
-			
-		messages=invocation.getSelectedMessages()
 		return self.menuitems_list
-	def menuaction(self,inv):
-		msg=inv.getSelectedMessages()
-		req=msg[0].getRequest().tolist()
-		reqdata=''.join(map(chr,req))
-		self.extender.mytab.texteditor1.setText(reqdata)
-		
-		
-		#Do something
+	def menuactiononclick(self,inv):
+		msgs=inv.getSelectedMessages()
+		for r in msgs:
+			self.extender.burptab.reqeust_table.addRow(r)
+
+class RequestData():
+	def __init__(self,reqres):
+		self.reqres=reqres
 
 class BurpExtender(IBurpExtender):
-	
-	#
-	# implement IBurpExtender
-	#
-	
 	def	registerExtenderCallbacks(self, callbacks):
 		self.callbacks=callbacks
-		# set our extension name
-		self.callbacks.setExtensionName("CSRF PoC Generator")
-		helpers=self.callbacks.getHelpers()
-		# obtain our output and error streams
-		stdout = PrintWriter(self.callbacks.getStdout(), True)
-		stderr = PrintWriter(self.callbacks.getStderr(), True)
-		
-		# write a message to our output stream
-		stdout.println("Hello output")
-		
-		# write a message to our error stream
-		stderr.println("Hello errors")
-		
-		# write a message to the Burp alerts tab
+		self.callbacks.setExtensionName("CSRF PoC Generator3")
+		self.helpers=self.callbacks.getHelpers()
+		self.stdout = PrintWriter(self.callbacks.getStdout(), True)
+		self.stderr = PrintWriter(self.callbacks.getStderr(), True)
+		self.stdout.println("Hello output")
+		self.stderr.println("Hello errors")
 		self.callbacks.issueAlert("Hello alerts")
-
 		version=self.callbacks.getBurpVersion()
 		print(version)
-		for i in version:
-			print(i)
-		stdout.println(version)
-
+		self.stdout.println(version)
+		#model=AbstractTableModelclass()
 		self.contextmenu=contextmenufactory(self)
 		self.callbacks.registerContextMenuFactory(self.contextmenu)
-		self.mytab=tab(self,'My Tab Name')
-		self.callbacks.addSuiteTab(self.mytab)
-
-
-
-
-	   # callbacks.unloadExtension()
-
-		# throw an exception that will appear in our error stream
-	   # raise RuntimeException("Hello exception")
-
+		self.burptab=burptab(self,'CSRF POC Generator Tab')
+		self.callbacks.addSuiteTab(self.burptab)
