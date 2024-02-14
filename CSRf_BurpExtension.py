@@ -3,7 +3,7 @@ from burp import IBurpExtender, IContextMenuFactory, ITab, ITextEditor
 from java.io import PrintWriter, File, FileOutputStream
 from java.lang import RuntimeException
 from java.awt import Panel
-from javax.swing import JScrollPane, JTextArea, JLabel, JMenuItem, JSplitPane, JFileChooser
+from javax.swing import JScrollPane, JTextArea, JLabel, JMenuItem, JSplitPane, JFileChooser, JTextField
 from burp import IHttpListener
 from burp import IMessageEditorController
 from java.awt import Component
@@ -36,11 +36,12 @@ class ButtonListener(ActionListener):
 	def actionPerformed(self,e):
 		fromButton=e.getSource().getText()
 		if fromButton=='Generate HTML PoC':
-			self.selectedreqid=self.extender.burptab.reqeust_table.getSelectedRow()
-			if self.selectedreqid == -1:
-				print('No data selected')
-				return ""
-			self.reqservice=self.extender.burptab.data[self.selectedreqid].getHttpService()
+			self.selectedreqid=self.extender.burptab.request_table.getSelectedRow()
+			#if self.selectedreqid == -1:
+			#	print('No data selected')
+			#	return ""
+			#self.reqservice=self.extender.burptab.data[self.selectedreqid].getHttpService()
+			self.reqservice=self.extender.helpers.buildHttpService(self.extender.burptab.messageHost.getText(),int(self.extender.burptab.messagePort.getText()),self.extender.burptab.messageProtocol.getText())
 			self.reqtext=self.extender.burptab.requestviewer.getMessage()
 			self.analyzedreq=self.extender.helpers.analyzeRequest(self.reqservice,self.reqtext)
 			self.reqparams=self.analyzedreq.getParameters()
@@ -59,6 +60,12 @@ class ButtonListener(ActionListener):
 			pass
 		if fromButton=='Move Down':
 			self.extender.burptab.pocviewer.setText("Move Down Generated!!!!!")
+			pass
+		if fromButton=='Clear Table':
+			self.extender.burptab.request_table.getModel().clearTable()
+		if fromButton=='Remove Item':
+			for i in self.extender.burptab.request_table.getSelectedRows():
+				self.extender.burptab.request_table.getModel().removeRow(i)
 			pass
 		if fromButton=='HTML PoC':
 			self.extender.burptab.pocviewer.setText("HTML PoC Generated!!!!!")
@@ -94,11 +101,11 @@ class MessageEditorController(IMessageEditorController):
 	def __init__(self,extender):
 		self.extender=extender
 	def getHttpService(self):
-		return self.extender.burptab.data.getHttpService()
+		return self.extender.helpers.buildHttpService(self.extender.burptab.messageHost.getText(),int(self.extender.burptab.messagePort.getText()),self.extender.burptab.messageProtocol.getText())
 	def getRequest(self):
-		return self._currentlyDisplayedItem.getRequest()
+		return self.extender.burptab.request_table.selectedreq.getRequest()
 	def getResponse(self):
-		return self._currentlyDisplayedItem.getResponse()
+		return self.extender.burptab.request_table.selectedreq.getResponse()
 	
 class burptab(ITab):
 	def __init__(self,extender,name):
@@ -114,8 +121,8 @@ class burptab(ITab):
 		self.split3_bottom=JSplitPane(JSplitPane.HORIZONTAL_SPLIT)
 		self.buttonpanel = Panel()
 		self.panel2 = Panel()
-		self.reqeust_table=Table(self.extender,self.data)
-		self.scrollPane=JScrollPane(self.reqeust_table)
+		self.request_table=Table(self.extender,self.data)
+		self.scrollPane=JScrollPane(self.request_table)
 		self.requestviewer=self.extender.callbacks.createMessageEditor(MessageEditorController(self.extender),True)
 		self.pocviewer=self.extender.callbacks.createTextEditor()
 		self.actionListener=ButtonListener(self.extender)
@@ -125,6 +132,24 @@ class burptab(ITab):
 		self.buttonSavePoc=JButton('Save PoC')
 		self.buttonpanel.add(self.buttonSavePoc)
 		self.buttonSavePoc.addActionListener(self.actionListener)
+		self.buttonMoveUp=JButton('Move Up')
+		self.buttonMoveDown=JButton('Move Down')
+		self.buttonRemoveItem=JButton('Remove Item')
+		self.buttonClear=JButton('Clear Table')
+		self.panel2.add(self.buttonMoveUp)
+		self.panel2.add(self.buttonMoveDown)
+		self.panel2.add(self.buttonRemoveItem)
+		self.panel2.add(self.buttonClear)
+		self.buttonMoveUp.addActionListener(self.actionListener)
+		self.buttonMoveDown.addActionListener(self.actionListener)
+		self.buttonRemoveItem.addActionListener(self.actionListener)
+		self.buttonClear.addActionListener(self.actionListener)
+		self.messageHost=JTextField()
+		self.messagePort=JTextField()
+		self.messageProtocol=JTextField()
+		self.buttonpanel.add(self.messageHost)
+		self.buttonpanel.add(self.messagePort)
+		self.buttonpanel.add(self.messageProtocol)
 
 		self.mainsplit.setDividerLocation(300)
 		self.split1_top.setDividerLocation(1000)
@@ -144,7 +169,7 @@ class burptab(ITab):
 		self.extender.callbacks.customizeUiComponent(self.split1_top)
 		self.extender.callbacks.customizeUiComponent(self.split2_bottom)
 		self.extender.callbacks.customizeUiComponent(self.split3_bottom)
-		self.extender.callbacks.customizeUiComponent(self.reqeust_table)
+		self.extender.callbacks.customizeUiComponent(self.request_table)
 		self.extender.callbacks.customizeUiComponent(self.scrollPane)
 		self.extender.callbacks.customizeUiComponent(self.buttonpanel)
 		self.extender.callbacks.customizeUiComponent(self.panel2)
@@ -160,12 +185,12 @@ class Table(JTable):
 	def changeSelection(self, row, col, toggle, extend):
 			self.selectedreq=self.data[row]
 			self.extender.burptab.requestviewer.setMessage(self.selectedreq.getRequest(), True)
+			self.service=self.selectedreq.getHttpService()
+			self.extender.burptab.messageHost.setText(self.service.getHost())
+			self.extender.burptab.messagePort.setText(str(self.service.getPort()))
+			self.extender.burptab.messageProtocol.setText(self.service.getProtocol())
 			JTable.changeSelection(self, row, col, toggle, extend)
-	def addRow(self,message):
-		rc=len(self.data)
-		req=self.extender.callbacks.saveBuffersToTempFiles(message)
-		self.data.append(req)
-		self.getModel().fireTableRowsInserted(rc,rc)
+	
 
 class AbstractTableModelclass(AbstractTableModel):
 	def __init__(self,extender,data):
@@ -199,6 +224,22 @@ class AbstractTableModelclass(AbstractTableModel):
 	
 	def getSelectedRow(self,rowIndex=0):
 		return self.data[rowIndex]
+	
+	def addRow(self, message):
+		rc=len(self.data)
+		req=self.extender.callbacks.saveBuffersToTempFiles(message)
+		self.data.append(req)
+		self.extender.burptab.requestviewer.setMessage(self.extender.helpers.stringToBytes(""),False)
+
+		self.fireTableRowsInserted(rc,rc)
+	
+	def removeRow(self, row):
+		del self.data[row]
+		self.fireTableRowsDeleted(row,row)
+
+	def clearTable(self):
+		del self.data[:]
+		self.fireTableRowsDeleted(0,self.getRowCount())
 
 class contextmenufactory(IContextMenuFactory):
 	def __init__(self,extender):
@@ -216,7 +257,7 @@ class contextmenufactory(IContextMenuFactory):
 	def menuactiononclick(self,inv):
 		msgs=inv.getSelectedMessages()
 		for r in msgs:
-			self.extender.burptab.reqeust_table.addRow(r)
+			self.extender.burptab.request_table.getModel().addRow(r)
 
 class RequestData():
 	def __init__(self,reqres):
